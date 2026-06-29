@@ -46,42 +46,26 @@ module.exports = async (req, res) => {
 
   try {
     const { message, callback_query } = req.body;
-    if (!message || !message.text)
-      return res.status(200).send("No message text");
 
-    const chatId = message.chat.id.toString();
-    const text = message.text.trim();
-
-    // 1. SECURITY CHECK: Hanya merespons Owner/Admin
-    if (chatId !== ADMIN_CHAT_ID) {
-      await sendToTelegram(
-        chatId,
-        "❌ Maaf, Anda tidak memiliki akses ke bot administrasi ini.",
-      );
-      return res.status(200).send("Unauthorized");
-    }
-
-    // --- HANDLE JIKA TOMBOL APPROVE/DENY DIKLIK ---
+    // --- HANDLE CALLBACK QUERY (APPROVE/DENY) ---
     if (callback_query) {
       const chatId = callback_query.message.chat.id.toString();
-      const callbackData = callback_query.data; // Contoh: "approve|SAMSUNG123|30|admin_toko"
+      const callbackData = callback_query.data;
       const callbackQueryId = callback_query.id;
 
-      // Pastikan hanya kamu yang bisa klik tombolnya
       if (chatId !== ADMIN_CHAT_ID) {
         await answerCallback(callbackQueryId, "❌ Anda tidak memiliki akses!");
         return res.status(200).send("Unauthorized");
       }
 
       const args = callbackData.split("|");
-      const action = args[0]; // "approve" atau "deny"
+      const action = args[0];
 
       if (action === "approve") {
         const deviceId = args[1];
         const days = args[2];
         const username = args[3];
 
-        // Generate Kode Aktivasi AES seperti biasa
         const result = generateLicense(deviceId, days);
 
         const responseMsg =
@@ -92,10 +76,7 @@ module.exports = async (req, res) => {
           `🔑 *Kode Aktivasi (Salin & Berikan ke User):*\n\n` +
           `\`${result.code}\``;
 
-        // Kirim kode lisensi ke chat kamu
         await sendToTelegram(chatId, responseMsg);
-
-        // Beri notif pop-up kecil di Telegram kalau sukses
         await answerCallback(callbackQueryId, "Lisensi berhasil di-approve!");
       } else if (action === "deny") {
         const username = args[1];
@@ -109,61 +90,74 @@ module.exports = async (req, res) => {
       return res.status(200).send("OK");
     }
 
-    if (message && message.text) {
-      // 2. Handle Perintah /start
-      if (text === "/start") {
-        await sendToTelegram(
-          chatId,
-          "👋 Selamat datang di Aorta POS Admin Bot!\n\nFormat perintah:\n`/generate [Device_ID] [Jumlah_Hari]`\n\nContoh:\n`/generate SAMSUNG-123-XYZ 30` ",
-        );
-        return res.status(200).send("OK");
-      }
+    // --- HANDLE TEXT MESSAGES ---
+    if (!message || !message.text)
+      return res.status(200).send("No message text");
 
-      // 3. Handle Perintah /generate
-      if (text.startsWith("/generate")) {
-        const args = text.split(" ");
+    const chatId = message.chat.id.toString();
+    const text = message.text.trim();
 
-        if (args.length < 3) {
-          await sendToTelegram(
-            chatId,
-            "❌ Format salah!\nGunakan: `/generate [Device_ID] [Jumlah_Hari]`",
-          );
-          return res.status(200).send("Bad Request");
-        }
-
-        const deviceId = args[1];
-        const days = args[2];
-
-        if (isNaN(days)) {
-          await sendToTelegram(
-            chatId,
-            "❌ Jumlah hari harus berupa angka, bre!",
-          );
-          return res.status(200).send("Bad Request");
-        }
-
-        // Jalankan fungsi enkripsi
-        const result = generateLicense(deviceId, days);
-
-        const responseMsg =
-          `✅ *LICENSE GENERATED SUCCESS* \n\n` +
-          `📱 *Device ID:* \`${deviceId}\`\n` +
-          `📅 *Masa Aktif:* ${days} Hari\n` +
-          `⏳ *Valid Sampai:* ${result.expiredAt}\n\n` +
-          `🔑 *Kode Aktivasi (Salin teks di bawah ini):*\n\n` +
-          `\`${result.code}\``;
-
-        await sendToTelegram(chatId, responseMsg);
-        return res.status(200).send("OK");
-      }
-
-      // Jika perintah tidak dikenali
+    // SECURITY CHECK: Hanya merespons Owner/Admin
+    if (chatId !== ADMIN_CHAT_ID) {
       await sendToTelegram(
         chatId,
-        "❓ Perintah tidak dikenali, bre. Gunakan `/generate`.",
+        "❌ Maaf, Anda tidak memiliki akses ke bot administrasi ini.",
+      );
+      return res.status(200).send("Unauthorized");
+    }
+
+    // Handle /start
+    if (text === "/start") {
+      await sendToTelegram(
+        chatId,
+        "👋 Selamat datang di Aorta POS Admin Bot!\n\nFormat perintah:\n`/generate [Device_ID] [Jumlah_Hari]`\n\nContoh:\n`/generate SAMSUNG-123-XYZ 30` ",
       );
       return res.status(200).send("OK");
     }
+
+    // Handle /generate
+    if (text.startsWith("/generate")) {
+      const args = text.split(" ");
+
+      if (args.length < 3) {
+        await sendToTelegram(
+          chatId,
+          "❌ Format salah!\nGunakan: `/generate [Device_ID] [Jumlah_Hari]`",
+        );
+        return res.status(200).send("Bad Request");
+      }
+
+      const deviceId = args[1];
+      const days = args[2];
+
+      if (isNaN(days)) {
+        await sendToTelegram(
+          chatId,
+          "❌ Jumlah hari harus berupa angka, bre!",
+        );
+        return res.status(200).send("Bad Request");
+      }
+
+      const result = generateLicense(deviceId, days);
+
+      const responseMsg =
+        `✅ *LICENSE GENERATED SUCCESS* \n\n` +
+        `📱 *Device ID:* \`${deviceId}\`\n` +
+        `📅 *Masa Aktif:* ${days} Hari\n` +
+        `⏳ *Valid Sampai:* ${result.expiredAt}\n\n` +
+        `🔑 *Kode Aktivasi (Salin teks di bawah ini):*\n\n` +
+        `\`${result.code}\``;
+
+      await sendToTelegram(chatId, responseMsg);
+      return res.status(200).send("OK");
+    }
+
+    // Perintah tidak dikenali
+    await sendToTelegram(
+      chatId,
+      "❓ Perintah tidak dikenali, bre. Gunakan `/generate`.",
+    );
+    return res.status(200).send("OK");
   } catch (error) {
     console.error("Error handler:", error);
     return res.status(200).send("Internal Error");
